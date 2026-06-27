@@ -1,40 +1,135 @@
-// TAJ front-end: capture a spoken utterance, ship it over the WebSocket, render
-// the tutor's reply + corrections, and play the synthesized voice back.
+// TAJ front-end.
+//
+// Flow: English onboarding (pick native language + target + level) → open the
+// WebSocket with those choices → spoken practice in the target language with
+// native-language translations underneath every line.
 
-const conversationEl = document.getElementById("conversation");
-const correctionsEl = document.getElementById("corrections");
-const deckEl = document.getElementById("deck");
-const statusEl = document.getElementById("status");
-const talkBtn = document.getElementById("talk");
+const $ = (id) => document.getElementById(id);
+
+const onboardingEl = $("onboarding");
+const appEl = $("app");
+const conversationEl = $("conversation");
+const correctionsEl = $("corrections");
+const deckEl = $("deck");
+const statusEl = $("status");
+const bannerEl = $("banner");
+const talkBtn = $("talk");
 
 let ws;
 let mediaRecorder;
 let chunks = [];
-let rtl = false;
+let choice = { native: "en", target: "ar-LEV", level: "A1", rtl: true };
+let providers = {};
 
 // --------------------------------------------------------------------------- //
-// Boot
+// Onboarding
 // --------------------------------------------------------------------------- //
-async function boot() {
+async function initOnboarding() {
+  let data;
   try {
-    const cfg = await fetch("/api/config").then((r) => r.json());
-    rtl = cfg.rtl;
-    setStatus(
-      `${cfg.name} · ${cfg.dialect} · ${cfg.level} · ` +
-        `stt:${cfg.providers.stt} llm:${cfg.providers.llm} tts:${cfg.providers.tts}`,
-      "ready"
-    );
-    document.title = `TAJ — ${cfg.name}`;
+    data = await fetch("/api/languages").then((r) => r.json());
   } catch (e) {
-    setStatus("could not load config", "error");
+    $("ob-note").textContent =
+      "Couldn't reach the TAJ server. Is it running? (python -m backend.main)";
+    return;
   }
+  providers = data.providers || {};
+
+  fillSelect($("ob-native"), data.natives, "en");
+  fillSelect(
+    $("ob-target"),
+    data.targets.map((t) => ({
+      key: t.key,
+      label: `${t.name} — ${t.dialect}`,
+      rtl: t.rtl,
+    })),
+    "ar-LEV"
+  );
+  fillSelect($("ob-level"), data.levels, "A1");
+
+  // Restore the learner's last choices, if any.
+  const saved = loadChoice();
+  if (saved) {
+    $("ob-native").value = saved.native;
+    $("ob-target").value = saved.target;
+    $("ob-level").value = saved.level;
+  }
+
+  // Tell the user up front whether real speech recognition is on.
+  if (providers.stt === "mock") {
+    $("ob-note").innerHTML =
+      "⚠ Speech recognition is in <strong>practice mode</strong> right now, so " +
+      "TAJ can't understand your words yet — it'll still talk and you'll see the " +
+      "full flow. Install <code>faster-whisper</code> to let it hear you (README).";
+  }
+
+  $("ob-start").addEventListener("click", start);
+}
+
+function fillSelect(sel, items, fallback) {
+  sel.innerHTML = "";
+  for (const it of items) {
+    const opt = document.createElement("option");
+    opt.value = it.key;
+    opt.textContent = it.label;
+    if (it.rtl !== undefined) opt.dataset.rtl = it.rtl;
+    sel.appendChild(opt);
+  }
+  if ([...sel.options].some((o) => o.value === fallback)) sel.value = fallback;
+}
+
+function start() {
+  const targetSel = $("ob-target");
+  choice = {
+    native: $("ob-native").value,
+    target: targetSel.value,
+    level: $("ob-level").value,
+    rtl: targetSel.selectedOptions[0]?.dataset.rtl === "true",
+  };
+  saveChoice(choice);
+
+  onboardingEl.classList.add("hidden");
+  appEl.classList.remove("hidden");
+
+  // Fresh conversation each time we (re)start.
+  conversationEl.innerHTML = "";
+  correctionsEl.innerHTML = "";
+
+  const targetName = targetSel.selectedOptions[0]?.textContent || choice.target;
+  setStatus(
+    `${targetName} · ${choice.level} · ` +
+      `stt:${providers.stt} llm:${providers.llm} tts:${providers.tts}`,
+    "ready"
+  );
+
+  if (providers.stt === "mock") {
+    showBanner(
+      "Practice mode: TAJ can't understand speech yet (stt:mock). Your mic " +
+        "still records — install faster-whisper so it can hear you. See README."
+    );
+  } else {
+    hideBanner();
+  }
+
   connect();
   refreshDeck();
 }
 
+// --------------------------------------------------------------------------- //
+// WebSocket
+// --------------------------------------------------------------------------- //
 function connect() {
+  if (ws) {
+    try {
+      ws.onclose = null;
+      ws.close();
+    } catch (e) {}
+  }
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  const qs = `lang=${encodeURIComponent(choice.target)}&level=${encodeURIComponent(
+    choice.level
+  )}&native=${encodeURIComponent(choice.native)}`;
+  ws = new WebSocket(`${proto}://${location.host}/ws?${qs}`);
   ws.binaryType = "arraybuffer";
 
   ws.onopen = () => {
@@ -42,8 +137,10 @@ function connect() {
   };
   ws.onclose = () => {
     talkBtn.disabled = true;
-    setStatus("disconnected — reconnecting…", "error");
-    setTimeout(connect, 1500);
+    if (!appEl.classList.contains("hidden")) {
+      setStatus("disconnected — reconnecting…", "error");
+      setTimeout(connect, 1500);
+    }
   };
   ws.onmessage = (ev) => handleMessage(JSON.parse(ev.data));
 }
@@ -72,6 +169,13 @@ function handleMessage(msg) {
 // --------------------------------------------------------------------------- //
 async function ensureMic() {
   if (mediaRecorder) return true;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showBanner(
+      "This browser can't access the microphone here. Use Chrome/Edge and open " +
+        "the app at http://127.0.0.1:8000 (not a file:// path)."
+    );
+    return false;
+  }
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     mediaRecorder = new MediaRecorder(stream);
@@ -81,7 +185,10 @@ async function ensureMic() {
     mediaRecorder.onstop = sendUtterance;
     return true;
   } catch (e) {
-    setStatus("microphone permission denied", "error");
+    showBanner(
+      "Microphone blocked. Click the 🔒/camera icon in the address bar → allow " +
+        "the microphone, then reload. (" + (e.name || "error") + ")"
+    );
     return false;
   }
 }
@@ -105,13 +212,11 @@ function stopRecording() {
 
 async function sendUtterance() {
   const blob = new Blob(chunks, { type: "audio/webm" });
+  if (blob.size === 0) return;
   const buf = await blob.arrayBuffer();
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(buf);
-  }
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(buf);
 }
 
-// Mouse + touch + spacebar bindings.
 talkBtn.addEventListener("mousedown", startRecording);
 talkBtn.addEventListener("mouseup", stopRecording);
 talkBtn.addEventListener("mouseleave", stopRecording);
@@ -124,16 +229,28 @@ talkBtn.addEventListener("touchend", (e) => {
   stopRecording();
 });
 document.addEventListener("keydown", (e) => {
-  if (e.code === "Space" && !e.repeat && !talkBtn.disabled) {
+  if (e.code === "Space" && !e.repeat && !talkBtn.disabled && !isOnboarding()) {
     e.preventDefault();
     startRecording();
   }
 });
 document.addEventListener("keyup", (e) => {
-  if (e.code === "Space") {
+  if (e.code === "Space" && !isOnboarding()) {
     e.preventDefault();
     stopRecording();
   }
+});
+
+// "Change" button → back to onboarding.
+$("change").addEventListener("click", () => {
+  if (ws) {
+    ws.onclose = null;
+    try {
+      ws.close();
+    } catch (e) {}
+  }
+  appEl.classList.add("hidden");
+  onboardingEl.classList.remove("hidden");
 });
 
 // --------------------------------------------------------------------------- //
@@ -141,7 +258,7 @@ document.addEventListener("keyup", (e) => {
 // --------------------------------------------------------------------------- //
 function addBubble(role, text, translation) {
   const el = document.createElement("div");
-  el.className = `bubble ${role}` + (rtl && role !== "error" ? " rtl" : "");
+  el.className = `bubble ${role}` + (choice.rtl && role !== "error" ? " rtl" : "");
   const main = document.createElement("div");
   main.className = "main-text";
   main.textContent = text;
@@ -170,7 +287,9 @@ function renderCorrections(corrections) {
 
 async function refreshDeck() {
   try {
-    const data = await fetch("/api/srs/due").then((r) => r.json());
+    const data = await fetch(
+      `/api/srs/due?lang=${encodeURIComponent(choice.target)}`
+    ).then((r) => r.json());
     const { total, due } = data.counts;
     deckEl.textContent = `${total} cards · ${due} due for review`;
   } catch (e) {
@@ -180,16 +299,46 @@ async function refreshDeck() {
 
 function playAudio(b64, format) {
   const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-  const blob = new Blob([bytes], { type: format === "wav" ? "audio/wav" : "audio/mpeg" });
+  const blob = new Blob([bytes], {
+    type: format === "wav" ? "audio/wav" : "audio/mpeg",
+  });
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
   audio.play().catch(() => {});
   audio.onended = () => URL.revokeObjectURL(url);
 }
 
+// --------------------------------------------------------------------------- //
+// Helpers
+// --------------------------------------------------------------------------- //
 function setStatus(text, cls) {
   statusEl.textContent = text;
   statusEl.className = "status" + (cls ? " " + cls : "");
+}
+
+function showBanner(text) {
+  bannerEl.textContent = text;
+  bannerEl.classList.remove("hidden");
+}
+function hideBanner() {
+  bannerEl.classList.add("hidden");
+}
+
+function isOnboarding() {
+  return !onboardingEl.classList.contains("hidden");
+}
+
+function saveChoice(c) {
+  try {
+    localStorage.setItem("taj.choice", JSON.stringify(c));
+  } catch (e) {}
+}
+function loadChoice() {
+  try {
+    return JSON.parse(localStorage.getItem("taj.choice"));
+  } catch (e) {
+    return null;
+  }
 }
 
 function escapeHtml(s) {
@@ -202,4 +351,4 @@ function escapeHtml(s) {
   }[c]));
 }
 
-boot();
+initOnboarding();

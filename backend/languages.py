@@ -23,6 +23,7 @@ class LanguageProfile:
     whisper_lang: str   # ISO-639-1 code Whisper expects (e.g. "ar")
     tts_lang: str       # language code XTTS expects (e.g. "ar")
     greeting: str       # first line TAJ speaks when a session opens
+    greeting_en: str    # English translation of the greeting (shown to beginners)
     persona: str        # injected into the tutor system prompt
     rtl: bool = False   # right-to-left script (affects UI direction)
 
@@ -56,7 +57,8 @@ REGISTRY: dict[str, LanguageProfile] = {
         dialect="Levantine (Shami)",
         whisper_lang="ar",
         tts_lang="ar",
-        greeting="مرحبا! أنا تاج، رح ساعدك تتعلم عربي. شو اسمك؟",
+        greeting="مرحبا! أنا تاج. رح ساعدك تتعلم عربي. شو اسمك؟",
+        greeting_en="Hi! I'm TAJ. I'll help you learn Arabic. What's your name?",
         persona=_LEVANTINE_PERSONA,
         rtl=True,
     ),
@@ -67,7 +69,8 @@ REGISTRY: dict[str, LanguageProfile] = {
         dialect="Modern Standard Arabic",
         whisper_lang="ar",
         tts_lang="ar",
-        greeting="مرحباً! أنا تاج، سأساعدك على تعلّم العربية. ما اسمك؟",
+        greeting="مرحباً! أنا تاج. سأساعدك على تعلّم العربية. ما اسمك؟",
+        greeting_en="Hello! I'm TAJ. I'll help you learn Arabic. What's your name?",
         persona=_MSA_PERSONA,
         rtl=True,
     ),
@@ -79,7 +82,8 @@ REGISTRY: dict[str, LanguageProfile] = {
         dialect="Standard Mainland Mandarin",
         whisper_lang="zh",
         tts_lang="zh-cn",
-        greeting="你好！我是 TAJ，我会帮你学中文。你叫什么名字？",
+        greeting="你好！我是 TAJ。我会帮你学中文。你叫什么名字？",
+        greeting_en="Hello! I'm TAJ. I'll help you learn Chinese. What's your name?",
         persona=_MANDARIN_PERSONA,
         rtl=False,
     ),
@@ -91,6 +95,7 @@ REGISTRY: dict[str, LanguageProfile] = {
         whisper_lang="ja",
         tts_lang="ja",
         greeting="こんにちは！TAJ です。日本語の練習を手伝います。お名前は？",
+        greeting_en="Hello! I'm TAJ. I'll help you practice Japanese. What's your name?",
         persona=_JAPANESE_PERSONA,
         rtl=False,
     ),
@@ -98,7 +103,32 @@ REGISTRY: dict[str, LanguageProfile] = {
 
 DEFAULT_KEY = "ar-LEV"
 
+# The learner's own language — used so the tutor translates/explains in a
+# language they already understand. Codes are arbitrary internal keys.
+NATIVE_LANGUAGES: dict[str, str] = {
+    "en": "English",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "hi": "Hindi",
+    "ur": "Urdu",
+}
+
+# CEFR-ish levels offered in onboarding, with plain-English labels.
+LEVELS: dict[str, str] = {
+    "A1": "Beginner — just starting out",
+    "A2": "Elementary — some basics",
+    "B1": "Intermediate — can hold simple conversations",
+    "B2": "Upper-intermediate — fairly comfortable",
+    "C1": "Advanced — fluent-ish, polishing",
+}
+
 
 def get_profile(key: str | None = None) -> LanguageProfile:
     """Return the profile for ``key`` (or the default), never raising on a bad key."""
     return REGISTRY.get(key or DEFAULT_KEY, REGISTRY[DEFAULT_KEY])
+
+
+def native_name(code: str | None) -> str:
+    """English display name for a native-language code (defaults to English)."""
+    return NATIVE_LANGUAGES.get(code or "en", "English")

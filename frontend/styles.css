@@ -137,6 +137,112 @@ footer {
 .talk.recording { background: var(--error); color: #fff; transform: scale(1.04); }
 .hint { color: var(--muted); font-size: 13px; margin: 0; text-align: center; }
 
+/* --- utility --- */
+.hidden { display: none !important; }
+.app { display: flex; flex-direction: column; height: 100vh; }
+
+/* --- onboarding --- */
+.onboarding {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 30%, #1b2030, var(--bg));
+  padding: 20px;
+  z-index: 10;
+}
+.onboarding-card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--panel);
+  border: 1px solid #2a2f3a;
+  border-radius: 18px;
+  padding: 32px 28px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+.brand.big { justify-content: center; margin-bottom: 6px; }
+.brand.big .crown { font-size: 34px; }
+.brand.big h1 { font-size: 30px; }
+.welcome {
+  text-align: center;
+  color: var(--muted);
+  margin: 0 0 24px;
+  line-height: 1.5;
+}
+.welcome strong { color: var(--text); }
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.field span {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+.field select {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid #313743;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 16px;
+  cursor: pointer;
+}
+.field select:focus { outline: 2px solid var(--accent); }
+
+.start-btn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 15px;
+  border: none;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #1a1400;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.start-btn:hover { filter: brightness(1.05); }
+.ob-note {
+  margin: 16px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.ob-note code {
+  background: var(--panel-2);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* --- header extras --- */
+.header-right { display: flex; align-items: center; gap: 12px; }
+.change-btn {
+  background: var(--panel);
+  color: var(--muted);
+  border: 1px solid #313743;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.change-btn:hover { color: var(--text); }
+
+/* --- mock-mode / error banner --- */
+.banner {
+  background: #3a2f12;
+  color: #f0d28a;
+  border-bottom: 1px solid #4a3c18;
+  padding: 10px 22px;
+  font-size: 14px;
+  text-align: center;
+}
+
 @media (max-width: 720px) {
   main { grid-template-columns: 1fr; }
   .sidebar { display: none; }

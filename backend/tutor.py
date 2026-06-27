@@ -13,17 +13,18 @@ from dataclasses import dataclass, field
 
 from backend.languages import LanguageProfile
 
-# How much target-language immersion to use, by level.
+# How much target-language immersion to use, by level. "{native}" is filled with
+# the learner's own language so the tutor scaffolds in a language they know.
 _LEVEL_GUIDANCE = {
     "A1": "The learner is a near-total beginner. Keep sentences very short and "
-    "simple. You may use some English to scaffold, and always give an English "
+    "simple. You may use some {native} to scaffold, and always give a {native} "
     "translation of your reply.",
     "A2": "The learner is an advanced beginner. Use simple target-language "
-    "sentences; give an English translation. Minimal English explanation.",
+    "sentences; give a {native} translation. Minimal {native} explanation.",
     "B1": "The learner is intermediate. Speak almost entirely in the target "
-    "language; translate only difficult phrases.",
+    "language; translate only difficult phrases into {native}.",
     "B2": "The learner is upper-intermediate. Speak in the target language; "
-    "translate rarely.",
+    "translate into {native} rarely.",
     "C1": "The learner is advanced. Speak entirely in the target language; do "
     "not translate unless asked.",
 }
@@ -38,8 +39,12 @@ class TutorResponse:
     raw: str = ""                    # the model's raw output (debugging)
 
 
-def build_system_prompt(profile: LanguageProfile, level: str) -> str:
-    level_note = _LEVEL_GUIDANCE.get(level, _LEVEL_GUIDANCE["A1"])
+def build_system_prompt(
+    profile: LanguageProfile, level: str, native_lang: str = "English"
+) -> str:
+    level_note = _LEVEL_GUIDANCE.get(level, _LEVEL_GUIDANCE["A1"]).format(
+        native=native_lang
+    )
     return f"""\
 You are TAJ, a patient, efficient, voice-based language tutor. You are having a
 SPOKEN conversation, so your replies are read aloud — keep them SHORT and natural,
@@ -48,6 +53,9 @@ never essay-length.
 TARGET LANGUAGE: {profile.name} ({profile.native_name}).
 DIALECT: {profile.dialect}.
 {profile.persona}
+
+THE LEARNER'S OWN LANGUAGE IS {native_lang.upper()}. All translations and any
+explanations you give must be in {native_lang}.
 
 LEARNER LEVEL: {level}. {level_note}
 
@@ -66,7 +74,7 @@ OUTPUT FORMAT — respond using EXACTLY these tags, nothing else:
 - what they said -> corrected version : one-line reason
 (omit this section entirely if there were no mistakes)
 </corrections>
-<translation>English translation of your reply</translation>
+<translation>{native_lang} translation of your reply</translation>
 <vocab>
 word | reading or transliteration | English meaning
 (0-2 lines; omit the section if nothing worth saving)

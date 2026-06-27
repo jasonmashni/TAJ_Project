@@ -19,8 +19,11 @@ class Settings(BaseSettings):
     port: int = 8000
 
     # --- active language/dialect (key into backend.languages.REGISTRY) ---
+    # These are defaults only — the onboarding screen lets the learner choose,
+    # and the choice is passed per-connection on the WebSocket.
     language: str = "ar-LEV"
     learner_level: str = "A1"  # CEFR-ish: A1 A2 B1 B2 C1
+    native_language: str = "en"  # the learner's own language (for translations)
 
     # --- provider selection ---
     # "auto"  -> try the real local provider, fall back to "mock" if unavailable

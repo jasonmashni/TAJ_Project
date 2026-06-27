@@ -24,7 +24,13 @@ from fastapi.staticfiles import StaticFiles
 
 from backend import srs, tutor
 from backend.config import settings
-from backend.languages import get_profile
+from backend.languages import (
+    LEVELS,
+    NATIVE_LANGUAGES,
+    REGISTRY,
+    get_profile,
+    native_name,
+)
 from backend.providers import get_llm, get_stt, get_tts
 from backend.schemas import ConfigResponse, ReviewRequest
 
@@ -84,9 +90,33 @@ def config() -> ConfigResponse:
     )
 
 
+@app.get("/api/languages")
+def languages() -> dict:
+    """Everything the onboarding screen needs to populate its dropdowns."""
+    return {
+        "targets": [
+            {
+                "key": p.key,
+                "name": p.name,
+                "native_name": p.native_name,
+                "dialect": p.dialect,
+                "rtl": p.rtl,
+            }
+            for p in REGISTRY.values()
+        ],
+        "levels": [{"key": k, "label": v} for k, v in LEVELS.items()],
+        "natives": [{"key": k, "label": v} for k, v in NATIVE_LANGUAGES.items()],
+        "providers": {
+            "stt": _stt.name if _stt else "?",
+            "llm": _llm.name if _llm else "?",
+            "tts": _tts.name if _tts else "?",
+        },
+    }
+
+
 @app.get("/api/srs/due")
-def srs_due() -> dict:
-    p = get_profile(settings.language)
+def srs_due(lang: str | None = None) -> dict:
+    p = get_profile(lang or settings.language)
     return {"items": srs.due_items(p.key), "counts": srs.count(p.key)}
 
 
@@ -104,19 +134,25 @@ def srs_review(req: ReviewRequest) -> dict:
 @app.websocket("/ws")
 async def ws(websocket: WebSocket) -> None:
     await websocket.accept()
-    profile = get_profile(settings.language)
-    level = settings.learner_level
-    system = tutor.build_system_prompt(profile, level)
+
+    # The learner's choices arrive as query params from the onboarding screen,
+    # e.g. /ws?lang=ar-LEV&level=A1&native=en. Fall back to server defaults.
+    params = websocket.query_params
+    profile = get_profile(params.get("lang") or settings.language)
+    level = params.get("level") or settings.learner_level
+    native = native_name(params.get("native") or settings.native_language)
+    system = tutor.build_system_prompt(profile, level, native)
     history: list[dict] = []
 
-    # Greet first — and speak it — so the learner immediately hears the dialect.
+    # Greet first — speak it AND show the native-language translation, so an
+    # English speaker immediately understands what's happening.
     await _send_assistant(
         websocket,
         profile,
         history,
         reply=profile.greeting,
         corrections=[],
-        translation="",
+        translation=profile.greeting_en,
         vocab=[],
     )
 
@@ -135,7 +171,7 @@ async def ws(websocket: WebSocket) -> None:
                     continue
                 user_text = text
             else:
-                user_text = await _transcribe(audio)
+                user_text = await _transcribe(audio, profile.whisper_lang)
 
             if not user_text.strip():
                 await websocket.send_json(
@@ -176,13 +212,13 @@ async def ws(websocket: WebSocket) -> None:
             pass
 
 
-async def _transcribe(audio: bytes) -> str:
+async def _transcribe(audio: bytes, whisper_lang: str) -> str:
     # Whisper decodes via ffmpeg, which wants a file; write to a temp path.
     with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp:
         tmp.write(audio)
         path = tmp.name
     try:
-        return await _stt.transcribe(path, get_profile(settings.language).whisper_lang)
+        return await _stt.transcribe(path, whisper_lang)
     finally:
         try:
             os.unlink(path)
