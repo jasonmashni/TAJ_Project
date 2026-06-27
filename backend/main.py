@@ -144,6 +144,10 @@ async def ws(websocket: WebSocket) -> None:
     system = tutor.build_system_prompt(profile, level, native)
     history: list[dict] = []
 
+    # In "browser" speech mode the browser does speech-to-text and speaks the
+    # reply itself (zero installs) — so the server skips its own TTS.
+    server_tts = params.get("speech") != "browser"
+
     # Greet first — speak it AND show the native-language translation, so an
     # English speaker immediately understands what's happening.
     await _send_assistant(
@@ -154,6 +158,7 @@ async def ws(websocket: WebSocket) -> None:
         corrections=[],
         translation=profile.greeting_en,
         vocab=[],
+        send_audio=server_tts,
     )
 
     try:
@@ -201,6 +206,7 @@ async def ws(websocket: WebSocket) -> None:
                 corrections=resp.corrections,
                 translation=resp.translation,
                 vocab=resp.vocab,
+                send_audio=server_tts,
             )
     except WebSocketDisconnect:
         pass
@@ -235,6 +241,7 @@ async def _send_assistant(
     corrections: list[dict],
     translation: str,
     vocab: list[dict],
+    send_audio: bool = True,
 ) -> None:
     await websocket.send_json(
         {
@@ -246,6 +253,9 @@ async def _send_assistant(
             "vocab": vocab,
         }
     )
+    # In browser-speech mode the browser speaks the reply itself; skip server TTS.
+    if not send_audio:
+        return
     # Synthesize and stream the spoken reply.
     try:
         wav = await _tts.synthesize(reply, profile.tts_lang)

@@ -1,8 +1,10 @@
 // TAJ front-end.
 //
-// Flow: English onboarding (pick native language + target + level) → open the
-// WebSocket with those choices → spoken practice in the target language with
-// native-language translations underneath every line.
+// Speech runs IN THE BROWSER — no installs:
+//   • SpeechRecognition  → turns your voice into text (the mic)
+//   • speechSynthesis     → speaks TAJ's reply out loud (the voice)
+// The browser sends/receives only TEXT over the WebSocket; the server runs the
+// tutor brain. This is why it works on any Python version with nothing to install.
 
 const $ = (id) => document.getElementById(id);
 
@@ -16,10 +18,16 @@ const bannerEl = $("banner");
 const talkBtn = $("talk");
 
 let ws;
-let mediaRecorder;
-let chunks = [];
 let choice = { native: "en", target: "ar-LEV", level: "A1", rtl: true };
 let providers = {};
+
+// Map a target profile to a BCP-47 code the browser's speech engine understands.
+const SPEECH_LANG = {
+  "ar-LEV": "ar-SA",
+  "ar-MSA": "ar-SA",
+  "zh-CN": "zh-CN",
+  "ja-JP": "ja-JP",
+};
 
 // --------------------------------------------------------------------------- //
 // Onboarding
@@ -47,7 +55,6 @@ async function initOnboarding() {
   );
   fillSelect($("ob-level"), data.levels, "A1");
 
-  // Restore the learner's last choices, if any.
   const saved = loadChoice();
   if (saved) {
     $("ob-native").value = saved.native;
@@ -55,15 +62,20 @@ async function initOnboarding() {
     $("ob-level").value = saved.level;
   }
 
-  // Tell the user up front whether real speech recognition is on.
-  if (providers.stt === "mock") {
+  if (!speechSupported()) {
     $("ob-note").innerHTML =
-      "⚠ Speech recognition is in <strong>practice mode</strong> right now, so " +
-      "TAJ can't understand your words yet — it'll still talk and you'll see the " +
-      "full flow. Install <code>faster-whisper</code> to let it hear you (README).";
+      "⚠ This browser can't do speech. Please open TAJ in <strong>Chrome</strong> " +
+      "or <strong>Microsoft Edge</strong> (Edge has the best built-in Arabic voice).";
+  } else if (providers.llm === "mock") {
+    $("ob-note").innerHTML =
+      "✅ Your mic and a built-in voice are ready — no installs needed. The tutor " +
+      "brain is still in practice mode (canned replies); we'll switch on a real " +
+      "tutor next.";
   }
 
   $("ob-start").addEventListener("click", start);
+  // Warm up the voice list (some browsers load it lazily).
+  if (window.speechSynthesis) speechSynthesis.getVoices();
 }
 
 function fillSelect(sel, items, fallback) {
@@ -90,22 +102,16 @@ function start() {
 
   onboardingEl.classList.add("hidden");
   appEl.classList.remove("hidden");
-
-  // Fresh conversation each time we (re)start.
   conversationEl.innerHTML = "";
   correctionsEl.innerHTML = "";
 
   const targetName = targetSel.selectedOptions[0]?.textContent || choice.target;
-  setStatus(
-    `${targetName} · ${choice.level} · ` +
-      `stt:${providers.stt} llm:${providers.llm} tts:${providers.tts}`,
-    "ready"
-  );
+  setStatus(`${targetName} · ${choice.level} · 🎤 browser · 🧠 ${providers.llm}`, "ready");
 
-  if (providers.stt === "mock") {
+  if (providers.llm === "mock") {
     showBanner(
-      "Practice mode: TAJ can't understand speech yet (stt:mock). Your mic " +
-        "still records — install faster-whisper so it can hear you. See README."
+      "Speech works now (no installs!). The tutor brain is still in practice " +
+        "mode — replies are canned. Ask me to switch on a real tutor for live lessons."
     );
   } else {
     hideBanner();
@@ -116,7 +122,7 @@ function start() {
 }
 
 // --------------------------------------------------------------------------- //
-// WebSocket
+// WebSocket (text in, text out — the browser handles the audio)
 // --------------------------------------------------------------------------- //
 function connect() {
   if (ws) {
@@ -126,11 +132,12 @@ function connect() {
     } catch (e) {}
   }
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  const qs = `lang=${encodeURIComponent(choice.target)}&level=${encodeURIComponent(
-    choice.level
-  )}&native=${encodeURIComponent(choice.native)}`;
+  const qs =
+    `lang=${encodeURIComponent(choice.target)}` +
+    `&level=${encodeURIComponent(choice.level)}` +
+    `&native=${encodeURIComponent(choice.native)}` +
+    `&speech=browser`;
   ws = new WebSocket(`${proto}://${location.host}/ws?${qs}`);
-  ws.binaryType = "arraybuffer";
 
   ws.onopen = () => {
     talkBtn.disabled = false;
@@ -148,16 +155,16 @@ function connect() {
 function handleMessage(msg) {
   switch (msg.type) {
     case "transcript":
-      addBubble("user", msg.text, "");
+      // We already show the user's words from the browser; ignore the echo.
       break;
     case "message":
       addBubble("assistant", msg.text, msg.translation);
       renderCorrections(msg.corrections);
+      speak(msg.text); // browser speaks the reply
       if (msg.vocab && msg.vocab.length) refreshDeck();
       break;
     case "audio":
-      playAudio(msg.data, msg.format);
-      break;
+      break; // browser speech mode ignores server audio
     case "error":
       addBubble("error", msg.message, "");
       break;
@@ -165,58 +172,115 @@ function handleMessage(msg) {
 }
 
 // --------------------------------------------------------------------------- //
-// Push-to-talk recording
+// Speech-to-text (the microphone) — browser SpeechRecognition
 // --------------------------------------------------------------------------- //
-async function ensureMic() {
-  if (mediaRecorder) return true;
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    showBanner(
-      "This browser can't access the microphone here. Use Chrome/Edge and open " +
-        "the app at http://127.0.0.1:8000 (not a file:// path)."
-    );
-    return false;
-  }
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream);
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunks.push(e.data);
-    };
-    mediaRecorder.onstop = sendUtterance;
-    return true;
-  } catch (e) {
-    showBanner(
-      "Microphone blocked. Click the 🔒/camera icon in the address bar → allow " +
-        "the microphone, then reload. (" + (e.name || "error") + ")"
-    );
-    return false;
-  }
+let recog;
+let recognizing = false;
+let finalText = "";
+
+function speechSupported() {
+  return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 }
 
-async function startRecording() {
-  if (!(await ensureMic())) return;
-  if (mediaRecorder.state === "recording") return;
-  chunks = [];
-  mediaRecorder.start();
-  talkBtn.classList.add("recording");
-  talkBtn.querySelector(".talk-label").textContent = "Listening…";
+function ensureRecog() {
+  if (recog) return recog;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    showBanner("Speech isn't supported here — please use Chrome or Microsoft Edge.");
+    return null;
+  }
+  recog = new SR();
+  recog.continuous = false;
+  recog.interimResults = false;
+  recog.maxAlternatives = 1;
+  recog.onresult = (e) => {
+    finalText = e.results[0][0].transcript;
+  };
+  recog.onerror = (e) => {
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+      showBanner(
+        "Microphone blocked. Click the 🔒 icon left of the address bar → set " +
+          "Microphone to Allow → reload."
+      );
+    } else if (e.error === "no-speech") {
+      // ignore — they just didn't say anything
+    }
+  };
+  recog.onend = () => {
+    recognizing = false;
+    setTalkLabel("Hold to speak");
+    talkBtn.classList.remove("recording");
+    if (finalText.trim()) {
+      submitText(finalText.trim());
+      finalText = "";
+    }
+  };
+  return recog;
+}
+
+function startRecording() {
+  const r = ensureRecog();
+  if (!r || recognizing) return;
+  r.lang = SPEECH_LANG[choice.target] || "en-US";
+  finalText = "";
+  try {
+    r.start();
+    recognizing = true;
+    talkBtn.classList.add("recording");
+    setTalkLabel("Listening…");
+  } catch (e) {
+    /* start() throws if called twice; ignore */
+  }
 }
 
 function stopRecording() {
-  if (mediaRecorder && mediaRecorder.state === "recording") {
-    mediaRecorder.stop();
+  if (recog && recognizing) {
+    try {
+      recog.stop();
+    } catch (e) {}
   }
-  talkBtn.classList.remove("recording");
-  talkBtn.querySelector(".talk-label").textContent = "Hold to speak";
 }
 
-async function sendUtterance() {
-  const blob = new Blob(chunks, { type: "audio/webm" });
-  if (blob.size === 0) return;
-  const buf = await blob.arrayBuffer();
-  if (ws && ws.readyState === WebSocket.OPEN) ws.send(buf);
+function submitText(text) {
+  // Stop any ongoing speech so TAJ doesn't talk over the next turn.
+  if (window.speechSynthesis) speechSynthesis.cancel();
+  addBubble("user", text, "");
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(text);
 }
 
+// --------------------------------------------------------------------------- //
+// Text-to-speech (the voice) — browser speechSynthesis
+// --------------------------------------------------------------------------- //
+let _voices = [];
+function loadVoices() {
+  if (window.speechSynthesis) _voices = speechSynthesis.getVoices() || [];
+}
+if (window.speechSynthesis) {
+  loadVoices();
+  speechSynthesis.onvoiceschanged = loadVoices;
+}
+
+function pickVoice(langBase) {
+  if (!_voices.length) loadVoices();
+  return (
+    _voices.find((v) => v.lang && v.lang.toLowerCase().startsWith(langBase)) || null
+  );
+}
+
+function speak(text) {
+  if (!window.speechSynthesis || !text) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = SPEECH_LANG[choice.target] || "en-US";
+  const v = pickVoice(u.lang.split("-")[0].toLowerCase());
+  if (v) u.voice = v;
+  u.rate = 0.95;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(u);
+}
+
+// --------------------------------------------------------------------------- //
+// Button + key bindings
+// --------------------------------------------------------------------------- //
 talkBtn.addEventListener("mousedown", startRecording);
 talkBtn.addEventListener("mouseup", stopRecording);
 talkBtn.addEventListener("mouseleave", stopRecording);
@@ -241,7 +305,6 @@ document.addEventListener("keyup", (e) => {
   }
 });
 
-// "Change" button → back to onboarding.
 $("change").addEventListener("click", () => {
   if (ws) {
     ws.onclose = null;
@@ -249,6 +312,7 @@ $("change").addEventListener("click", () => {
       ws.close();
     } catch (e) {}
   }
+  if (window.speechSynthesis) speechSynthesis.cancel();
   appEl.classList.add("hidden");
   onboardingEl.classList.remove("hidden");
 });
@@ -297,17 +361,6 @@ async function refreshDeck() {
   }
 }
 
-function playAudio(b64, format) {
-  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-  const blob = new Blob([bytes], {
-    type: format === "wav" ? "audio/wav" : "audio/mpeg",
-  });
-  const url = URL.createObjectURL(blob);
-  const audio = new Audio(url);
-  audio.play().catch(() => {});
-  audio.onended = () => URL.revokeObjectURL(url);
-}
-
 // --------------------------------------------------------------------------- //
 // Helpers
 // --------------------------------------------------------------------------- //
@@ -315,7 +368,10 @@ function setStatus(text, cls) {
   statusEl.textContent = text;
   statusEl.className = "status" + (cls ? " " + cls : "");
 }
-
+function setTalkLabel(t) {
+  const el = talkBtn.querySelector(".talk-label");
+  if (el) el.textContent = t;
+}
 function showBanner(text) {
   bannerEl.textContent = text;
   bannerEl.classList.remove("hidden");
@@ -323,11 +379,9 @@ function showBanner(text) {
 function hideBanner() {
   bannerEl.classList.add("hidden");
 }
-
 function isOnboarding() {
   return !onboardingEl.classList.contains("hidden");
 }
-
 function saveChoice(c) {
   try {
     localStorage.setItem("taj.choice", JSON.stringify(c));
@@ -340,7 +394,6 @@ function loadChoice() {
     return null;
   }
 }
-
 function escapeHtml(s) {
   return (s || "").replace(/[&<>"']/g, (c) => ({
     "&": "&amp;",

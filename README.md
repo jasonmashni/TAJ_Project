@@ -15,36 +15,51 @@ conversation — not streaks and points.
 
 ---
 
-## Run it in 30 seconds (mock mode, no models)
+## Run it (no AI installs needed)
 
 ```bash
+# Windows
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python -m backend.main
+
+# Mac / Linux
 ./run.sh
 ```
 
-Then open <http://127.0.0.1:8000>, **hold the gold button** (or hold the
-spacebar), say something, and release. In mock mode you'll get a canned reply and
-a beep — proving the full **mic → transcribe → tutor → speak → review** loop
-works end to end before you download a single model.
+Then open **<http://127.0.0.1:8000>** in **Chrome or Microsoft Edge**, complete
+the short English setup (what you speak / want to learn / your level), then
+**hold the gold button** (or the spacebar), talk, and release.
 
-> `run.sh` makes a virtualenv and installs only the small core deps. To run
-> manually: `pip install -r requirements.txt && python -m backend.main`.
+**Speech runs inside your browser** — the mic and the spoken voice use the
+browser's built-in speech engine, so there is *nothing* to install for hearing
+and talking. (Edge has the best built-in Arabic voice.)
+
+The only piece that needs setup is the **tutor brain**. Out of the box it's in
+"practice mode" (canned replies). Switch on a real tutor below.
 
 ---
 
-## Turn on the real local AI
+## Turn on a real tutor brain
 
-TAJ runs fully offline once you install the three local models. Each is opt-in
-because they're large.
+Pick one:
 
-| Capability | Install | Enable |
-| --- | --- | --- |
-| **Speech → text** | `pip install faster-whisper` | `TAJ_STT_PROVIDER=whisper` |
-| **Tutor brain** | [Install Ollama](https://ollama.com), then `ollama pull qwen2.5:7b-instruct` | `TAJ_LLM_PROVIDER=ollama` |
-| **Text → speech** | `pip install TTS` | `TAJ_TTS_PROVIDER=coqui` |
+**A) Cloud (easiest, best quality).** A real Claude-powered tutor: one light
+`pip install`, paste an API key, done. Works on any Python version; costs per
+use. *(Provider lands in the next step — see the project chat.)*
 
-Copy `.env.example` to `.env`, set the providers (or leave them on `auto` — TAJ
-uses the real model if present and silently falls back to mock if not), and
-restart. The status bar in the UI shows which providers are live.
+**B) Local Ollama (private, free, offline).** [Install Ollama](https://ollama.com),
+run `ollama pull qwen2.5:7b-instruct`, set `TAJ_LLM_PROVIDER=ollama`. A multi-GB
+download; runs best with a decent CPU/GPU. Independent of your Python version
+(it's a separate app, not a pip package).
+
+> **Optional fully-offline speech** (instead of the browser): the local
+> `faster-whisper` (STT) and `Coqui TTS` providers also exist, but they require
+> **Python 3.9–3.11** (they don't install on 3.12+). The browser path above
+> avoids that entirely and is recommended.
+
+Copy `.env.example` to `.env` to set any of these. The status bar shows what's live.
 
 ---
 
