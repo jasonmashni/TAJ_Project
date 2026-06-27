@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Env / secrets
+.env
+
+# Local data (SQLite deck + progress)
+data/
+*.db
+
+# Model caches / voice clips
+voices/
+*.wav
+!frontend/**
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

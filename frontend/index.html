@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TAJ — talk your way fluent</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <span class="crown">♔</span>
+        <h1>TAJ</h1>
+      </div>
+      <div id="status" class="status">connecting…</div>
+    </header>
+
+    <main>
+      <section id="conversation" class="conversation" aria-live="polite"></section>
+
+      <aside id="sidebar" class="sidebar">
+        <h2>Corrections</h2>
+        <ul id="corrections" class="corrections"></ul>
+        <h2>Review deck</h2>
+        <div id="deck" class="deck">—</div>
+      </aside>
+    </main>
+
+    <footer>
+      <button id="talk" class="talk" disabled>
+        <span class="talk-label">Hold to speak</span>
+      </button>
+      <p class="hint">
+        Hold the button, speak, release. TAJ replies in your target language and
+        corrects you as you go.
+      </p>
+    </footer>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

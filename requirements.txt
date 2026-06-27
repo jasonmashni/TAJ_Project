@@ -1,0 +1,18 @@
+# --- Core (always required to run, even in mock mode) ---
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.6
+pydantic-settings>=2.2
+httpx>=0.27          # used by the Ollama provider; tiny, kept in core
+
+# --- Optional local-AI providers ---
+# Install these when you're ready to swap mock mode for real local models.
+# (They are large; that's why they're opt-in.)
+#
+#   pip install faster-whisper      # speech-to-text  (TAJ_STT_PROVIDER=whisper)
+#   pip install TTS                 # Coqui XTTS-v2    (TAJ_TTS_PROVIDER=coqui)
+#
+# The tutor brain runs in Ollama (a separate app, not a pip package):
+#   1. install Ollama from https://ollama.com
+#   2. ollama pull qwen2.5:7b-instruct
+#   3. set TAJ_LLM_PROVIDER=ollama
