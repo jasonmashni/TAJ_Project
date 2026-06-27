@@ -75,7 +75,23 @@ def _resolve(kind: str, choice: str):
             from backend.providers.stt_whisper import WhisperSTT
 
             return WhisperSTT()
-        if kind == "llm" and choice in ("auto", "ollama"):
+        if kind == "llm" and choice == "claude":
+            from backend.providers.llm_claude import ClaudeLLM
+
+            return ClaudeLLM()
+        if kind == "llm" and choice == "auto":
+            # Smart default: use cloud Claude if a key is present, else try
+            # local Ollama, else fall through to mock.
+            import os
+
+            if settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY"):
+                from backend.providers.llm_claude import ClaudeLLM
+
+                return ClaudeLLM()
+            from backend.providers.llm_ollama import OllamaLLM
+
+            return OllamaLLM()
+        if kind == "llm" and choice == "ollama":
             from backend.providers.llm_ollama import OllamaLLM
 
             return OllamaLLM()

@@ -6,7 +6,12 @@ or a local ``.env`` file. See ``.env.example``.
 
 from __future__ import annotations
 
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Load .env into the process environment too, so the Anthropic SDK (which reads
+# the standard ANTHROPIC_API_KEY var) picks it up from the same file.
+load_dotenv()
 
 
 class Settings(BaseSettings):
@@ -38,9 +43,14 @@ class Settings(BaseSettings):
     whisper_device: str = "auto"       # cpu | cuda | auto
     whisper_compute_type: str = "int8"  # int8 (cpu) | float16 (gpu)
 
-    # --- Ollama (LLM tutor brain) ---
+    # --- Ollama (local LLM tutor brain) ---
     ollama_url: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b-instruct"
+
+    # --- Claude (cloud LLM tutor brain) ---
+    # The SDK also reads the standard ANTHROPIC_API_KEY env var; either works.
+    anthropic_api_key: str | None = None
+    claude_model: str = "claude-opus-4-8"  # set to claude-haiku-4-5 for speed/cost
 
     # --- Coqui XTTS (TTS) ---
     coqui_model: str = "tts_models/multilingual/multi-dataset/xtts_v2"

@@ -5,14 +5,16 @@ pydantic>=2.6
 pydantic-settings>=2.2
 httpx>=0.27          # used by the Ollama provider; tiny, kept in core
 
-# --- Optional local-AI providers ---
-# Install these when you're ready to swap mock mode for real local models.
-# (They are large; that's why they're opt-in.)
+# --- Tutor brain (pick one) ---
+# Cloud Claude (recommended, easiest — works on any Python version):
+#   pip install anthropic
+#   then put ANTHROPIC_API_KEY in .env and set TAJ_LLM_PROVIDER=claude
 #
+# OR local Ollama (free/offline, separate app — not a pip package):
+#   install Ollama from https://ollama.com, run `ollama pull qwen2.5:7b-instruct`,
+#   set TAJ_LLM_PROVIDER=ollama
+#
+# --- Optional fully-offline speech (NOT needed — the browser handles speech) ---
+# These require Python 3.9-3.11 (they don't install on 3.12+):
 #   pip install faster-whisper      # speech-to-text  (TAJ_STT_PROVIDER=whisper)
 #   pip install TTS                 # Coqui XTTS-v2    (TAJ_TTS_PROVIDER=coqui)
-#
-# The tutor brain runs in Ollama (a separate app, not a pip package):
-#   1. install Ollama from https://ollama.com
-#   2. ollama pull qwen2.5:7b-instruct
-#   3. set TAJ_LLM_PROVIDER=ollama
